@@ -1,0 +1,98 @@
+
+CREATE TABLE public.controlitens
+(
+    id_controlitens integer NOT NULL DEFAULT nextval('seq_id_controlitens'::regclass),
+    name text NOT NULL,
+    description text ,
+    enabled boolean NOT NULL,
+    expression text NOT NULL,
+    idaction integer NOT NULL,
+    idpriority integer NOT NULL,
+    actionconfig text,
+    keyterm text NOT NULL,
+    CONSTRAINT controlitens_pkey PRIMARY KEY (id_controlitens)
+);
+
+CREATE TABLE public.actions
+(
+    type text NOT NULL,
+    id integer NOT NULL DEFAULT nextval('actions_id_action_seq'::regclass),
+    CONSTRAINT actions_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE public.priorities
+(
+    priority text NOT NULL,
+    id integer NOT NULL DEFAULT nextval('priorities__id_seq'::regclass),
+    CONSTRAINT priorities_pkey PRIMARY KEY (id)
+);
+
+INSERT INTO public.actions ( type )
+VALUES ( 'Email' ), ( 'Ticket' ), ( 'Auditar' ), ( 'Alerta' ), ( 'Forçar' );
+
+INSERT INTO public.priorities (	priority )
+VALUES ( 'Informacional' ), ( 'Normal' ), ( 'Alta' ), ( 'Crítica' );
+
+INSERT INTO public.controlitens 
+    (
+	 name, 
+     description, 
+     enabled, 
+     expression, 
+     idaction, 
+     idpriority, 
+     actionconfig, 
+     keyterm
+     )
+VALUES
+    (
+        'Nomenclatura padronizada dos objetos obrigatória',
+        'O nome de cada regra de Firewall deve obedecer critérios de padronização definidos por expressão regular',
+        false,
+        'regex'
+        1,
+        1,
+        '{"dest":"emailteste@email.com","subject":"Assunto","text":"corpo"}',
+        'name'
+    ),
+    (
+        'Descrição das regras obrigatória',
+        'Cada regra de Firewall deve sempre conter uma descrição explicando o objetivo básico e os objetos da regra.',
+        false,
+        'regex'
+        1,
+        1,
+        '{"dest":"emailteste@email.com","subject":"Assunto","text":"corpo"}',
+        'description'
+    ),
+    (
+        'Geração de log obrigatória',
+        'Cada regra de Firewall deve obrigatoriamente gerar log.',
+        false,
+        'regex'
+        1,
+        1,
+        '{"dest":"emailteste@email.com","subject":"Assunto","text":"corpo"}',
+        'log'
+    ),
+    (
+        'Tempo máximo de regras sem utilização',
+        'Configura qual o tempo máximo que uma regra pode estar ativa sem ter incidência.',
+        false,
+        'regex'
+        1,
+        1,
+        '{"dest":"emailteste@email.com","subject":"Assunto","text":"corpo"}',
+        'unutilized'
+    ),
+    (
+        'Tempo de expiração definido',
+        'Cada regra do Firewall deve conter um tempo de expiração pré determinado.',
+        false,
+        'regex'
+        1,
+        1,
+        '{"dest":"emailteste@email.com","subject":"Assunto","text":"corpo"}',
+        'expiration'
+    ),
+   ;

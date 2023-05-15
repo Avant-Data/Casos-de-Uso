@@ -1,0 +1,813 @@
+<head>
+    <style>
+        /* Estilização de algumas partes da visualização - CSS3*/
+        .divTitleCrud{
+           background-color: #e96817;
+           color: white;
+           font-weight: bold;
+           font-family:Verdana, Geneva, Tahoma, sans-serif;
+           margin: 0px 1px 10px 1px;
+           padding:20px 10px 10px 10px;
+           border-radius: 20px 20px 0px 0px;
+        }        
+        .hipcolor{
+            margin-top: 7px;
+            background-color: #DDE7E8;
+            border-radius: 8px;
+            padding: 8px;
+        }
+        .mapd{
+            margin: 10px;
+            padding: 4px;
+        }
+        .line1{
+            border-top: 4px solid white;
+            height: 17px;
+        }
+        .line2{
+            height: 17px;
+        }
+        .tableCrud{
+            width: 100%;
+        }       
+        .btnFirewall{
+            margin-top: 35px;
+            height: 43px;
+            width: 90px;
+            background-color: #38a0a4;
+            color: white;
+            border-radius: 10px;   
+            border: thin;         
+            font-size: 15px;
+            font-weight: bold;
+            padding: 7px;
+        }
+        .theadCrud{
+            background-color: #38a0a4 ;            
+            color: white;
+        }
+        thead tr th {
+            font-size: 18px;
+        }
+        tbody tr td {
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<div >
+    <!-- Bloco do Título -->
+    <div class="row divTitleCrud menuCreate">
+        <div class="col-1">
+            <div class="row">
+                <div class="col-12 line2"></div>
+                <div class="col-12 line1"></div>
+            </div>
+        </div>
+        
+        <div class="col-10 ">
+            <h3 >CONFORMIDADE DE CONFIGURAÇÃO DE FIREWALL</h3>
+        </div>
+
+        <div class="col-1">
+            <div class="row">
+                <div class="col-12 line2"></div>
+                <div class="col-12 line1"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bloco da tabela -->
+    <div class="mapd" id="divTableCrudFirewall">
+        
+    </div>   
+    
+</div>
+
+<script>
+    // Variáveis globais de apoio
+    var connector = "FirewallGovernance"        // NOME DO CONECTOR
+    var table = 'public."controlitens"'         // NOME DA TABELA DE ITENS DE CONTROLE
+    var tableAction = 'public."actions"'        // NOME DA TABELA DE AÇÕES
+    var tablePriority = 'public."priorities"'   // NOME DA TABELA DE PRIORIDADES
+
+    var objActions = {}
+    var objActionsOriginal = {}
+    var objPrior = {}
+    var objPriorOriginal = {}
+    var objFillTable = {}
+    var objIdEnable = {}    
+    var objQueue = {}
+
+    // O que será executado assim que o documento iniciar.
+    $(document).ready(() => {
+        getOptionsForm(false)
+        fillTableOptionFirewall()
+        getQueuesAvantFlow()  
+        contextMenuPanel()  
+    
+    });
+
+    // Funcção que busca os ítens das tabelas de ação e prioridades para criar as opções que são usadas nas modais de Editar e Criar
+    function getOptionsForm(replacer=true) {
+        let querySelect = {
+            "conector": connector,
+            "query": `SELECT id, type from ${tableAction}`
+        }
+        let querySelectPri = {
+            "conector": connector,
+            "query": `SELECT id, priority from ${tablePriority}`
+        }
+        if (replacer == true){
+
+            $('.selectSeverity').html(``)
+            $('.selectSeverity').html(`
+                <option>Informacional</option>
+                <option>Low</option>
+                <option>Alto</option>
+                <option>Crítico</option>
+            `)
+            executeFirewallQuery(querySelect, 'optionsAction')
+        } else {
+            executeFirewallQuery(querySelect, 'optionsPriority')
+            executeFirewallQuery(querySelectPri, 'optionsActionFalse')
+        }
+    }
+
+    function setOnchangeConfigs(id, idConfig, patern) {
+        //Cada célula de configuração pode conter até 3 inputs 
+        // os ips serão sempre configRule + patern + 1,2 ou 3 
+        let getInput = $(`#${id}`).val()        
+        let input = objActions[`id${getInput}`]
+        input = input.toLowerCase()        
+        
+        if(input == 'email') {
+            $(`#${idConfig}`).html(``)
+            $(`#${idConfig}`).html(`
+                <input id="configRule${patern}_1" type="text" placeholder="Assunto" class="form-control form-control-sm">
+                <input id="configRule${patern}_2" type="text" placeholder="Destinatário" class="form-control form-control-sm">
+                <textarea id="configRule${patern}_3" placeholder="Corpo do email" class="md-textarea form-control" value=""></textarea>            
+            `)
+        }
+        if(input == 'ticket') {
+            $(`#${idConfig}`).html(``)
+            $(`#${idConfig}`).html(`
+                <input id="configRule${patern}_1" type="text" placeholder="Assunto" class="form-control form-control-sm">
+                <input id="configRule${patern}_2" type="text" placeholder="Fila" class="form-control form-control-sm">
+                <textarea id="configRule${patern}_3" placeholder="Corpo do ticket" class="md-textarea form-control" value=""></textarea>
+            `)                
+        }        
+        if(input == 'alerta') {
+            $(`#${idConfig}`).html(``)
+            $(`#${idConfig}`).html(`   
+            <input id="configRule${patern}_1" type="text" placeholder="Assunto" class="form-control form-control-sm">                  
+            <textarea id="configRule${patern}_2" placeholder="Corpo do alerta" class="md-textarea form-control" value=""></textarea>
+            `)
+        }
+        if(input == 'forçar') {$(`#${idConfig}`).html(``)}
+        if(input == 'auditar') {$(`#${idConfig}`).html(``)}
+
+    }
+
+    function executeFirewallQuery(query, option) {
+        //função que executa query enviada no argumento "query" e realiza algum procedimento que varia conforme o argumento "option"
+        $.ajax({
+            url: `/avantapi/sql/selectQuery`,
+            method: 'POST',
+            async: false,
+            data: JSON.stringify(query),
+            success: (resp) => {
+                console.log(resp)
+                
+                if(option == 'active-unactive') {                    
+                    toastr.success('Estatus de configuração alterada com sucesso', 'Sucesso', { positionClass: "toast-bottom-right",closeButton: "true"});
+                }
+                if(option == 'optionsActionFalse') {
+                    resp = resp.sort(function(a,b) {
+                        return a.type < b.type ? -1 : a.type > b.type ? 1 : 0;
+                    });
+                    objPriorOriginal = resp                   
+                    objPrior = {}
+                    for(i in resp) {                        
+                        objPrior[`id${resp[i].id}`] = resp[i].priority
+                    }
+                }
+                if(option == 'optionsAction') {
+                    resp = resp.sort(function(a,b) {
+                        return a.type < b.type ? -1 : a.type > b.type ? 1 : 0;
+                    });            
+                    $('.selectAction').html('')
+                    $('.selectAction').append('<option selected disabled>Selecione</option>')
+                    objActionsOriginal = resp
+                    objActions = {}
+                    for(i in resp) {
+                        $('.selectAction').append(`
+                        // <option value="${resp[i].id}" >${resp[i].type}</option>                                                  
+                        `)
+                        objActions[`id${resp[i].id}`] = resp[i].type
+                    }
+                }
+                if(option == 'optionsPriority') {
+                    resp = resp.sort(function(a,b) {
+                        return a.type < b.type ? -1 : a.type > b.type ? 1 : 0;
+                    });
+                    objActionsOriginal = resp                   
+                    objActions = {}
+                    for(i in resp) {                        
+                        objActions[`id${resp[i].id}`] = resp[i].type
+                    }
+                }
+                if(option == 'update') {         
+                    fillTableOptionFirewall()
+                    toastr.success('Configuração modificada com sucesso', 'Atenção', { positionClass: "toast-bottom-right",closeButton: "true"}); 
+                }
+                if(option == 'filTable'){
+                    
+                    objFillTable = {}
+                    objFillTable = resp
+                    objIdEnable = {}
+                    createBodyTable()
+                    $('#bodyTableCrudFirewall').html('')
+
+                    // Inicia um loop para preencher a tabela com cada item de controle encontrado no Conector
+                    for(v in resp) {  
+                        let actionJson = JSON.parse( resp[v].actionconfig)                        
+                        let dataString = JSON.stringify(resp[v])
+                        objIdEnable[`id${resp[v].id_controlitens}`] = resp[v].enabled
+
+                        let line = `<tr id="lineTableFirewall${v}">`
+
+                                line += `<td>${v}</td>`  
+
+                                line += `<td title="descrição: ${resp[v].description}">${resp[v].name}</td>`                       
+
+                                line += `<td>                                
+                                            <div class="custom-control custom-switch d-flex justify-content">
+                                                <input type="checkbox" onclick="activateItemFirewall('${resp[v].id_controlitens}')" class="custom-control-input"  id="checkboxRule${resp[v].id_controlitens}"  ${resp[v].enabled == true ? 'checked' : ''}>
+                                                <label class="custom-control-label" style="padding-top: 2px;" for="checkboxRule${resp[v].id_controlitens}"></label>
+                                            </div>                                
+                                        </td>`
+
+                                line += `<td>${resp[v].expression != undefined && resp[v].expression != null && resp[v].expression != '' ? resp[v].expression : '' }</td>`        
+
+                                let actIdLow = objActions[`id${resp[v].idaction}`]
+                                line += `<td> ${actIdLow}</td>`
+
+                                let prio = objPrior[`id${resp[v].idpriority}`]
+                                line += `<td> ${prio}</td>`
+
+                        line += `</tr>`
+                        $('#bodyTableCrudFirewall').append(line)
+                        if(resp[v].enabled == true) {
+                            $(`#checkboxRule${resp[v].id_controlitens}`).prop('checked');
+                        }
+                        contextMenuTableFirewall(`lineTableFirewall${v}`, resp[v])
+                    }
+                    setDataTableLib('tableFirewallRules')
+                }
+            },
+            error: (err) => {
+                toastr.error('Erro', 'Erro', { positionClass: "toast-bottom-right",closeButton: "true"});                
+            }
+        })
+    }
+
+    // Função que cria a query de pesquisa no conector e busca os campos para preencher a tabela.
+    function fillTableOptionFirewall() {
+        let querySelect = {
+            "conector": connector,
+            "query": `SELECT id_controlitens, name, keyterm, description, enabled, expression, idaction, actionconfig, idpriority FROM ${table}`
+        }
+        executeFirewallQuery(querySelect, 'filTable')
+    }
+    
+    //Função que ativa ou desativa item de controle atravez do clique no botão da tabela    
+    function activateItemFirewall(id){  
+        let queryUpd = {}
+        let blean =  objIdEnable[`id${id}`]
+        if(blean == true) {
+            toastr.info('Desativando configuração.', 'Aguarde', { positionClass: "toast-bottom-right",closeButton: "true"});
+            queryUpd = {
+                "conector": connector,
+                "query": `UPDATE ${table} SET enabled = false WHERE id = ${id}`
+            }
+        } else {
+            toastr.info('Ativando configuração', 'Aguarde', { positionClass: "toast-bottom-right",closeButton: "true"});
+            queryUpd = {
+                "conector": connector,
+                "query": `UPDATE ${table} SET enabled = true WHERE id = ${id}`
+            }
+        }
+        executeFirewallQuery(queryUpd, 'active-unactive')
+    }
+
+    // Função que busca as filas do AvantFlow 
+    function getQueuesAvantFlow() {
+        $.ajax({
+            url: '/avantapi/avantFlow/queues',
+            method: 'GET',
+            success: (filas) => {
+                objQueue = filas
+            },
+            error: (er) => {               
+                console.log({er})
+            }
+        })
+    }
+
+    function setQueueOptions(id, term) {
+        //preenche os selecs com as filas do AvantFlow
+        //Caso o argumento 'term' seja igual ao nome da fila, essa opção será colocada como selecionada
+        for(i in objQueue) {
+            if(objQueue[i].queue == term){
+                
+            }
+        }
+    }
+    
+    //Função que cria o menu de contexto  dos itens da tabela
+    function contextMenuTableFirewall(idLine, doc) {      
+        var context1 = [{
+            "text": "Editar",
+            "icon": '<i class="fas fa-sync-alt"></i>',
+            "events": {
+                "click": () => {
+                    setModalFirewall('update', doc)                   
+                    $("#btnUpdateEdit").unbind('click')
+                    $("#btnUpdateEdit").on('click', ()=>{
+                        updateCreateRuleFirewall(doc.id_controlitens)                        
+                    })
+                    // abre a modal 
+                    $('#modalPesquisarDadosEmApi').modal('show');
+                }
+            }
+        }];
+        try {
+            context1.sort(function(a, b) {
+                return (a.text > b.text) ? 1 : ((b.text > a.text) ? -1 : 0);
+            })
+        } catch {};
+        $(`#${idLine}`).unbind('contextmenu');
+        $(`#${idLine}`).on('contextmenu', function(e) {
+            var menu = new ContextMenu(context1);
+            if (typeof Rotas.lastOpenedCmen !== 'undefined') {
+                Rotas.lastOpenedCmen.hide();
+            }
+            menu.display(e);
+            Rotas.lastOpenedCmen = menu;
+        });
+    }
+
+    //Função que pode atualizar os itens da tabela ou cria novos
+    function updateCreateRuleFirewall(id, create=false) {
+                
+        let name = $('#nameFirewallEdit').val().trim()
+        let desc = $('#descriptionFirewallEdit').val().trim()
+        let enable = $('#enableFirewallEdit').prop("checked")
+        let express = $('#expressionFirewallEdit').val().trim()
+        let priority = $('#severityFirewallEdit').val()
+        let acaoId = $('#actionFirewallEdit').val()
+        let keyW = $('#keywordFirewallEdit').val().trim()
+
+        if(name == '' || name == undefined || name == null) {
+            toastr.warning('O campo nome é obrigatório', 'Atenção', { positionClass: "toast-bottom-right",closeButton: "true"});   
+            return
+        }
+        if(priority == '' || priority == undefined || priority == null) {
+            toastr.warning('O campo prioridade é obrigatório', 'Atenção', { positionClass: "toast-bottom-right",closeButton: "true"});   
+            return
+        }
+        if(acaoId == '' || acaoId == undefined || acaoId == null) {
+            toastr.warning('O campo ação é obrigatório', 'Atenção', { positionClass: "toast-bottom-right",closeButton: "true"});   
+            return
+        }
+        
+        let acaoStr = objActions[`id${acaoId}`]
+        if(create == false) {
+            acaoStr = acaoStr.toLowerCase()
+        }
+        let dest = $('#destFirewallEdit').val()
+        let queue = $('#queueFirewallEdit').val()
+        let subject = $('#subjectFirewallEdit').val()
+        let text = $('#textFirewallEdit').val()
+        let jsonConfig ={};
+       
+        if(acaoStr == 'email'){
+            if(dest == '' || subject == ''  || text == '' ) {
+                toastr.warning('Os campos Destinatário, Assunto e Corpo são obrigatórios', 'Atenção', { positionClass: "toast-bottom-right",closeButton: "true"});   
+                return
+            }            
+            jsonConfig = {
+                "dest" : dest,
+                "subject" : subject,
+                "text": text,
+            }
+        } else if(acaoStr == 'ticket') {
+            if(queue == '' || subject == ''  || text == '' ) {
+                toastr.warning('Os campos Fila, Assunto e Corpo são obrigatórios', 'Atenção', { positionClass: "toast-bottom-right",closeButton: "true"});   
+                return
+            }
+            jsonConfig = {
+                "queue" : queue,
+                "subject" : subject,
+                "text": text,
+            }
+            
+        } else if(acaoStr == 'alerta') {
+            if(subject == ''  || text == '' ) {
+                toastr.warning('Os campos Assunto e Corpo são obrigatórios', 'Atenção', { positionClass: "toast-bottom-right",closeButton: "true"});   
+                return
+            }
+            jsonConfig = {                
+                "subject" : subject,
+                "text": text,
+            }
+        }
+        jsonConfig = JSON.stringify(jsonConfig)
+        let queryUpdate = {}
+        if(create == false) {
+
+             queryUpdate = {
+                "conector": connector,
+                "query": `UPDATE ${table} SET 
+                    "name" = '${name}',
+                    "description" = '${desc}',
+                    "enabled" = ${enable},
+                    "expression" = '${express}',
+                    "idaction" = ${acaoId},
+                    "idpriority" = ${priority},
+                    "keyterm" = '${keyW}',
+                    "actionconfig" = '${jsonConfig}'
+                    WHERE id_controlitens = ${id}`
+            }
+        } else {
+            queryUpdate = {
+               "conector": connector,
+               "query": `INSERT INTO ${table} (name, description, enabled, expression, idaction, idpriority, keyterm, actionconfig)
+                        VALUES ('${name}', '${desc}', ${enable}, '${express}', ${acaoId}, ${priority}, '${keyW}', '${jsonConfig}');`
+           }
+        }
+        executeFirewallQuery(queryUpdate, 'update')
+        $('#modalPesquisarDadosEmApi').modal('hide');       
+    }
+
+    // Função que ativa a biblioteca do DataTable
+    function setDataTableLib(idTable) {
+        $(`#${idTable}`).DataTable({
+            "language": {
+                scrollY: true,
+                "sEmptyTable": Dicionario.tradutor("Sem registro"),
+                "sInfo": Dicionario.tradutor("START END TORAL"),
+                "sInfoEmpty": Dicionario.tradutor("SHOWING 0 TO 0 OF 0 RECORDS"),
+                "sInfoFiltered": "(" + Dicionario.tradutor("FILTERED FROM MAX RECORDS") + ")",
+                "sInfoPostFix": "",
+                "sInfoThousands": ".",
+                "sLengthMenu": Dicionario.tradutor("MENU RESULTS PER PAGE"),
+                "sLoadingRecords": Dicionario.tradutor("LOADING") + "...",
+                "sProcessing": Dicionario.tradutor("PROCESSING") + "...",
+                "sZeroRecords": Dicionario.tradutor("NO RECORDS FOUND"),
+                "sSearch": Dicionario.tradutor("SEARCH"),
+                "oPaginate": {
+                    "sNext": Dicionario.tradutor("NEXT"),
+                    "sPrevious": Dicionario.tradutor("PREVIOUS"),
+                    "sFirst": Dicionario.tradutor("FIRST"),
+                    "sLast": Dicionario.tradutor("LAST")
+                },
+                "oAria": {
+                    "sSortAscending": ": " + Dicionario.tradutor("SORT COLUMNS ASCENDING"),
+                    "sSortDescending": ": " + Dicionario.tradutor("SORT COLUMNS DESCENDANT")
+                }
+            },
+            "destroy": true,
+           
+        });
+    }
+    
+    // Função que cria o corpo das modais de criação e edição
+    function setModalFirewall(set, doc=null) {
+        if(doc == null || set == "new") {
+            doc = {}
+            doc.enabled = false
+            doc.name = ''
+            doc.description = ''
+            doc.keyterm = ''
+            doc.expression = ''
+            doc.actionconfig = '{}'
+            doc.idpriority = 0
+            doc.idaction = 0
+        }
+        let titleModal = '';
+        if(set == 'update') {
+             titleModal = 'Editar';             
+            }
+        if(set == 'new') {
+            titleModal = 'Criar';            
+        }
+        let setUpdat = `<div  class="modal-dialog modal-dialog-centered modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header blue-grey text-white">
+                    <h5 class="modal-title" id="modalPesquisarDadosEmApiLabel">${titleModal}</h5>
+                    <button type="button" class="close white-text" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+
+                <div class="modal-body p-3">
+
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="form-group">
+                                <label for="nameFirewallEdit" class="font-weight-light">Nome *</label>
+                                <input value="${doc.name}" type="text" id="nameFirewallEdit" class="form-control form-control-sm">
+                            </div>
+                        </div>
+                        
+                        <div class="col-6">
+                            <div class="custom-control custom-switch d-flex justify-content">
+                                <input id="enableFirewallEdit" ${doc.enabled == true ? 'checked' : ''} type="checkbox" class="custom-control-input" >
+                                <label class="custom-control-label" style="padding-top: 2px;" for="enableFirewallEdit">Ativo</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col">
+                            <div class="form-group">
+                                <label for="descriptionFirewallEdit" class="font-weight-light">Descrição</label>                                
+                                <textarea id="descriptionFirewallEdit" class="md-textarea form-control" rows="2" >${doc.description}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-4">
+
+                            <div class="form-group">
+                                <label for="keywordFirewallEdit" class="font-weight-light">Palavra Chave *</label>
+                                <input value="${doc.keyterm}" type="text" id="keywordFirewallEdit" class="form-control form-control-sm" >
+                            </div>
+                        </div>
+                        <div class="col">
+                            <div class="form-group">
+                                <label for="expressionFirewallEdit" class="font-weight-light">Expressão </label>
+                                <input value="${doc.expression}" type="text" id="expressionFirewallEdit" class="form-control form-control-sm">
+                            </div>
+                        </div>
+                        <div class="col">
+                            <label for="severityFirewallEdit" class="font-weight-light">Prioridade *</label>
+                            <select id="severityFirewallEdit" class='browser-default custom-select custom-select-sm selectSeverity' size="1">                        
+                            </select> 
+                        </div>
+                        
+                    </div> 
+
+                    <div class="row">                        
+                        <div class="col">
+                            <label for="actionFirewallEdit" class="font-weight-light">Ação *</label>
+                            <select id="actionFirewallEdit" class='browser-default custom-select custom-select-sm selectSeverity' size="1">                        
+                            </select> 
+                        </div>
+                    </div>
+                    <div id="divActionConfig" class="pt-2 hipcolor"> 
+
+                        <div id="editDest" >
+                            <div class="row">
+                                <div class="col-12" >
+                                    <div class="form-group " >
+                                        <label for="destFirewallEdit" class="font-weight-light">Destinatário</label>
+                                        <input  type="text" id="destFirewallEdit" class="form-control form-control-sm">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="editQueue">
+                            <div class="row">    
+                                <div class="col-12" >
+
+                                    <label for="queueFirewallEdit" class="font-weight-light">Fila *</label>
+                                    <select id="queueFirewallEdit" class='browser-default custom-select custom-select-sm selectSeverity' size="1">                        
+                                    </select> 
+
+                                    <!--
+                                    <div class="form-group " >
+                                        <label for="queueFirewallEdit" class="font-weight-light">Fila</label>
+                                        <input  type="text" id="queueFirewallEdit" class="form-control form-control-sm">
+                                    </div> -->
+                                </div>
+                            </div>
+                        </div>
+                            
+                        <div id="editSubject">
+                            <div class="row">
+                                <div class="col-12" >
+                                    <div class="form-group" >
+                                        <label for="subjectFirewallEdit" class="font-weight-light">Assunto</label>
+                                        <input type="text" id="subjectFirewallEdit" class="form-control form-control-sm">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="editText">
+                            <div class="row">
+                                <div class="col-12" >
+                                    <div class="form-group" >
+                                        <label for="textFirewallEdit" class="font-weight-light">Corpo</label>
+                                        <textarea id="textFirewallEdit" class="md-textarea form-control" rows="2"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                                            
+                    </div>
+                    
+                </div>
+
+                <div class="modal-footer">
+                    <div id="idBtnInputFirewall">
+                        <button type="button" style="float: right" class="btn btn-sm btn-blue-grey" id="btnUpdateEdit">Salvar</button>
+                    </div>                    
+                </div>
+            </div>
+        </div>`
+        
+        if(set == 'update' || set == 'new') {
+            let jsonConfg = JSON.parse(doc.actionconfig)
+            if (jsonConfg == null || jsonConfg == '' || jsonConfg == undefined){
+                jsonConfg = {}
+            }
+            $('#modalPesquisarDadosEmApi').html('')
+            $('#modalPesquisarDadosEmApi').html(setUpdat)
+            for(i in objPriorOriginal) {
+                if(doc.idpriority = objPriorOriginal[i].id) {
+                    $('#severityFirewallEdit').append(`
+                        <option value="${objPriorOriginal[i].id}" selected>${objPriorOriginal[i].priority}</option>
+                    `)
+                } else {
+                    $('#severityFirewallEdit').append(`
+                        <option value="${objPriorOriginal[i].id}">${objPriorOriginal[i].priority}</option>
+                    `)
+                }
+            }
+            for(i in objActionsOriginal) {
+                if(doc.idaction == objActionsOriginal[i].id) {
+                    $('#actionFirewallEdit').append(`
+                        <option value="${objActionsOriginal[i].id}" selected>${objActionsOriginal[i].type}</option>
+                    `)
+                } else {
+                    $('#actionFirewallEdit').append(`
+                        <option value="${objActionsOriginal[i].id}">${objActionsOriginal[i].type}</option>
+                    `)
+                }
+            }
+            for(t in objQueue) {
+                if(objQueue[t].Name == jsonConfg.queue) {
+                    $('#queueFirewallEdit').append(`<option selected>${objQueue[t].Name}</option>`)
+                } else{
+                    $('#queueFirewallEdit').append(`<option>${objQueue[t].Name}</option>`)
+                }
+            }
+            if(doc.actionconfig != '' && doc.actionconfig != undefined && doc.actionconfig != null) {
+                
+                let lis = objActions[`id${doc.idaction}`]
+                if(set == 'update'  ){
+
+                    lis = lis.toLowerCase()
+                }
+                if(lis == 'email') {
+                    $('#editQueue').attr('hidden', true)
+                    $('#editDest').attr('hidden', false)
+                    $('#editSubject').attr('hidden', false)
+                    $('#editText').attr('hidden', false)                    
+    
+                    $('#destFirewallEdit').val(`${jsonConfg.dest}`)
+                    $('#subjectFirewallEdit').val(`${jsonConfg.subject}`)
+                    $('#textFirewallEdit').html(`${jsonConfg.text}`)
+    
+                }
+                if(lis == 'ticket') {
+                    $('#editDest').attr('hidden', true)
+                    $('#editQueue').attr('hidden', false)
+                    $('#editSubject').attr('hidden', false)
+                    $('#editText').attr('hidden', false)
+                    
+
+                    $('#subjectFirewallEdit').val(`${jsonConfg.subject}`)
+                    // $('#queueFirewallEdit').val(`${jsonConfg.queue}`)
+                    $('#textFirewallEdit').html(`${jsonConfg.text}`)
+                }
+                if(lis == 'alerta') {
+                    $('#editDest').attr('hidden', true)
+                    $('#editQueue').attr('hidden', true)
+                    $('#editSubject').attr('hidden', false)
+                    $('#editText').attr('hidden', false)
+
+                    $('#subjectFirewallEdit').val(`${jsonConfg.subject}`)
+                    $('#textFirewallEdit').html(`${jsonConfg.text}`)
+                }
+                if(lis == 'auditar' || lis == 'forçar') {
+                    $('#divActionConfig').attr('hidden', true)
+                }
+            } else{
+                $('#divActionConfig').attr('hidden', true)
+            }
+            $('#actionFirewallEdit').on('change', () => {
+                let vall = $('#actionFirewallEdit').val()
+                vall = vall.toLowerCase()
+                let vallow = objActions[`id${vall}`] 
+                vallow = vallow.toLowerCase()
+                if(vallow == 'email') {
+                    $('#editQueue').attr('hidden', true)
+                    $('#editDest').attr('hidden', false)
+                    $('#editSubject').attr('hidden', false)
+                    $('#editText').attr('hidden', false)  
+                    $('#divActionConfig').attr('hidden', false)
+                }
+                if(vallow == 'ticket') {
+                    $('#editDest').attr('hidden', true)
+                    $('#editQueue').attr('hidden', false)
+                    $('#editSubject').attr('hidden', false)
+                    $('#editText').attr('hidden', false)
+                    $('#divActionConfig').attr('hidden', false)
+                }
+                if(vallow == 'alerta') {
+                    $('#editDest').attr('hidden', true)
+                    $('#editQueue').attr('hidden', true)
+                    $('#editSubject').attr('hidden', false)
+                    $('#editText').attr('hidden', false)
+                    $('#divActionConfig').attr('hidden', false)
+                }
+                if(vallow == 'auditar' || vallow == 'forçar') {
+                    $('#divActionConfig').attr('hidden', true)
+                }
+            })
+        }
+    
+        if(set == 'new') {
+            $('#idBtnInputFirewall').html('')
+            $('#idBtnInputFirewall').html(`
+                <button type="button" style="float: right" class="btn btn-sm btn-blue-grey" id="btnCreateEdit">Criar</button>
+            `)
+            $('#editQueue').attr('hidden', true)
+            $('#editDest').attr('hidden', true)
+            $('#editSubject').attr('hidden', true)
+            $('#editText').attr('hidden', true)  
+        }
+    }
+
+    // Função que cria o menu de contexto do cabeçalho e título
+    function contextMenuPanel() {
+        var context1 = [{
+            "text": "Novo Controle",
+            "icon": '<i class="fas fa-sync-alt"></i>',
+            "events": {
+                "click": () => {
+                    setModalFirewall('new')
+                    $("#btnCreateEdit").unbind('click')
+                    $("#btnCreateEdit").on('click', ()=>{
+                        updateCreateRuleFirewall(null, true)                        
+                    })
+                    $('#modalPesquisarDadosEmApi').modal('show');
+                }
+            }
+        }];
+        try {
+            context1.sort(function(a, b) {
+                return (a.text > b.text) ? 1 : ((b.text > a.text) ? -1 : 0);
+            })
+        } catch {};
+        $(`.menuCreate`).unbind('contextmenu');
+        $(`.menuCreate`).on('contextmenu', function(e) {
+            var menu = new ContextMenu(context1);
+            if (typeof Rotas.lastOpenedCmen !== 'undefined') {
+                Rotas.lastOpenedCmen.hide();
+            }
+            menu.display(e);
+            Rotas.lastOpenedCmen = menu;
+        });
+    }
+
+    // Função de apoio que ajuda a recriar a tabela no momento da criação.
+    function createBodyTable() {
+        $('#divTableCrudFirewall').html('')
+        $('#divTableCrudFirewall').html(`
+        <table class="tableCrudFirewall table table-striped" id="tableFirewallRules">
+            <thead class="theadCrud menuCreate">
+                <tr class='text-center p-3'>
+                                          
+                    <th class="percentNum" >N°</th>
+                    <th class="" >ÍTEM DE CONTROLE</th>
+                    <th class="percentAtivo" >ATIVO</th>
+                    <th class="" >EXPRESSÃO</th>
+                    <th class="" >AÇÃO</th>  
+                    <th class="" >PRIORIDADE</th>
+                    
+                </tr>
+            </thead>
+            
+            <tbody id="bodyTableCrudFirewall"></tbody>
+        </table>
+        `)
+    }
+</script>
